@@ -1,14 +1,36 @@
+<div align="center">
+
 ```
-   ▄▄▄▄· ▄▄▄  ▄• ▄▌▄▄▄▄▄▄▄▄ .▄▄▄▄▄
-   ▐█ ▀█▪▀▄ █·█▪██▌•██  ▀▄.▀·•██
-   ▐█▀▀█▄▐▀▀▄ █▌▐█▌ ▐█.▪▐▀▀▪▄ ▐█.▪
-   ██▄▪▐█▐█•█▌▐█▄█▌ ▐█▌·▐█▄▄▌ ▐█▌·
-   ·▀▀▀▀ .▀  ▀ ▀▀▀  ▀▀▀  ▀▀▀  ▀▀▀
-                                   32
-   ESP32-S3 Wireless Attack Platform
+    ____  ____  __  ______________________
+   / __ )/ __ \/ / / /_  __/ ____/__  /__ \
+  / __  / /_/ / / / / / / / __/   /_ <__/ /
+ / /_/ / _, _/ /_/ / / / / /___ ___/ / __/
+/_____/_/ |_|\____/ /_/ /_____//____/____/
 ```
 
+**ESP32-S3 Wireless Attack Platform**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.3.x-e7352c.svg?logo=espressif&logoColor=white)](https://github.com/espressif/esp-idf)
+[![Target](https://img.shields.io/badge/target-ESP32--S3-e7352c.svg?logo=espressif&logoColor=white)](#build)
+[![Phase](https://img.shields.io/badge/phase-1%20of%205-yellow.svg)](#status)
+[![Build](https://img.shields.io/badge/idf.py%20build-passing-brightgreen.svg)](#build)
+[![Use](https://img.shields.io/badge/use-authorized%20only-critical.svg)](#scope-of-use)
+
+</div>
+
+---
+
 `brute32` is a from-scratch rebuild of the ESP32 802.11/BLE attack-surface toolkit lineage (risinek's `esp32-wifi-penetration-tool`, ESP32 Marauder) — retargeted at ESP32-S3, rebased on ESP-IDF 5.3.x, and restructured as independent, testable components instead of one webserver-coupled blob. Built for authorized wireless security assessment and protocol research on hardware and networks you own or are cleared to test.
+
+### Contents
+
+- [Status](#status)
+- [Architecture](#architecture)
+- [Console commands](#console-commands-phase-1)
+- [Build](#build)
+- [Scope of use](#scope-of-use)
+- [Roadmap](#roadmap)
 
 ---
 
@@ -48,12 +70,16 @@ brute32/
 
 Each attack/capture component exposes a typed result API — no shared global state, no coupling to a webserver that doesn't exist yet. That's a deliberate departure from the upstream project this is based on, where every module wrote status strings into a struct the webserver polled.
 
-### Notable implementation details
+<details>
+<summary><strong>Notable implementation details</strong></summary>
+<br>
 
 - **Raw frame injection** (`attack_deauth`) uses the `wsl_bypasser` technique — overriding `ieee80211_raw_frame_sanity_check` to push handcrafted 802.11 management frames past the stock `libnet80211.a` blob's validation. This is undocumented-internals territory; behavior is pinned to IDF 5.3.2 on `esp32s3` and re-verified on every toolchain bump.
 - **PMKID capture** pulls the PMKID directly from the first EAPOL message of the 4-way handshake (RSN IE, no deauth required) — the same technique documented by hashcat/atom for the original clientless PMKID attack.
-- **Handshake capture** is fully passive: sniffs EAPOL M1-M4 off natural client reassociation. Pair with your own deauth call if you need to force a handshake on a network you control.
+- **Handshake capture** is fully passive: sniffs EAPOL M1–M4 off natural client reassociation. Pair with your own deauth call if you need to force a handshake on a network you control.
 - **Serialization** targets are file formats, not display formats — PCAP for Wireshark analysis, HCCAPX for direct `hashcat -m 22000` input.
+
+</details>
 
 ---
 
@@ -72,9 +98,11 @@ Each attack/capture component exposes a typed result API — no shared global st
 | `save <name>` | Flush current capture buffer to SPIFFS as `<name>.pcap` / `<name>.hccapx` (whichever has data) |
 | `fs_list` | List captured files in flash storage |
 
+---
+
 ## Build
 
-```
+```sh
 . $IDF_PATH/export.sh
 idf.py set-target esp32s3
 idf.py build
@@ -87,7 +115,8 @@ Builds clean against ESP-IDF `v5.3.2` targeting `esp32s3`; not yet flashed to ha
 
 ## Scope of use
 
-This is a personal research and authorized-pentest tool. It is built to run against wireless infrastructure you own, or infrastructure you hold explicit written authorization to test. Deauthentication, rogue-AP, and credential-capture techniques implemented here are disruptive and, in most jurisdictions, illegal to run against networks without that authorization. This project does not grant permission to test anything — that authorization is yours to obtain and yours to keep records of.
+> [!WARNING]
+> This is a personal research and authorized-pentest tool. It is built to run against wireless infrastructure you own, or infrastructure you hold explicit written authorization to test. Deauthentication, rogue-AP, and credential-capture techniques implemented here are disruptive and, in most jurisdictions, illegal to run against networks without that authorization. This project does not grant permission to test anything — that authorization is yours to obtain and yours to keep records of.
 
 Released under the [MIT License](LICENSE) with the above use restriction as a condition of use, not a suggestion.
 
@@ -95,4 +124,4 @@ Released under the [MIT License](LICENSE) with the above use restriction as a co
 
 ## Roadmap
 
-See `PROJECT_PLAN.md` for the full phased build-out — evil twin/captive portal, BLE scanning + advertising attacks, SD + GPS wardriving support, and the on-device LVGL display/button UI that eventually turns this into standalone hardware rather than a serial-tethered board.
+See [`PROJECT_PLAN.md`](PROJECT_PLAN.md) for the full phased build-out — evil twin/captive portal, BLE scanning + advertising attacks, SD + GPS wardriving support, and the on-device LVGL display/button UI that eventually turns this into standalone hardware rather than a serial-tethered board.
