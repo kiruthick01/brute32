@@ -1,0 +1,40 @@
+menu "Wi-Fi Controller"
+    config SCAN_MAX_AP
+        int "Maximum APs scanned"
+        default 20
+        help
+            Maximum number of scanned nearby APs kept in memory.
+
+    menu "Management AP"
+        config MGMT_AP_SSID
+            string "Management AP SSID"
+            default "Brute32"
+            help
+                SSID of the management AP used to control the device.
+
+        config MGMT_AP_PASSWORD
+            string "Management AP Password"
+            default "brute32admin"
+            help
+                Password for management AP WPA2 (minimum 8 characters).
+
+        config MGMT_AP_CHANNEL
+            int "Management AP channel"
+            range 1 13
+            default 3
+            help
+                Channel on which the management AP should run.
+
+        config MGMT_AP_MAX_CONNECTIONS
+            int "Maximum number of connected clients"
+            range 0 10
+            default 1
+
+        config MGMT_AP_AUTH_ON
+            bool "Password protected management AP"
+            default y
+            help
+                If enabled, WPA2-PSK is used. Otherwise authentication is open
+                and anyone can connect to the management AP.
+    endmenu
+endmenu

@@ -1,0 +1,17 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# Wi-Fi driver must not persist its own state to NVS between captures
+CONFIG_ESP_WIFI_NVS_ENABLED=n
+
+# Custom partition table with a SPIFFS "storage" partition for captures
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Assume a 4MB flash module (common baseline for esp32s3 dev boards); bump this
+# if your board has more.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# esp_console REPL over UART is the control surface until the web UI lands
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+CONFIG_FREERTOS_HZ=1000

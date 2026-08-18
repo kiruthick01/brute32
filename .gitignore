@@ -1,0 +1,16 @@
+build/
+sdkconfig
+sdkconfig.old
+.cache/
+.DS_Store
+
+# ESP-IDF component manager
+managed_components/
+dependencies.lock
+
+# Capture output — never commit real capture data
+*.pcap
+*.pcapng
+*.hccapx
+*.log
+captures/
