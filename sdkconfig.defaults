@@ -7,9 +7,10 @@ CONFIG_ESP_WIFI_NVS_ENABLED=n
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# Assume a 4MB flash module (common baseline for esp32s3 dev boards); bump this
-# if your board has more.
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# ESP32-S3-N16R8: 16MB flash, 8MB embedded octal PSRAM
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
 
 # esp_console REPL over UART is the control surface until the web UI lands
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
