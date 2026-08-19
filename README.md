@@ -109,7 +109,7 @@ idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
-Builds clean against ESP-IDF `v5.3.2` targeting `esp32s3`; not yet flashed to hardware. `sdkconfig.defaults` assumes a 4MB flash module (the common esp32s3 dev-board baseline) — bump `CONFIG_ESPTOOLPY_FLASHSIZE` if your board has more. No PSRAM config is set; add it if your board has PSRAM and you need it. `partitions.csv` reserves a 1MB SPIFFS region for capture storage.
+Builds clean against ESP-IDF `v5.3.2` targeting `esp32s3`. `sdkconfig.defaults` is set for a 16MB flash / 8MB octal PSRAM module (e.g. ESP32-S3-N16R8) — adjust `CONFIG_ESPTOOLPY_FLASHSIZE` and the `SPIRAM_*` options under `idf.py menuconfig` if your board differs. `partitions.csv` reserves a 1MB SPIFFS region for capture storage.
 
 ---
 
