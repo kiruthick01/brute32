@@ -243,6 +243,17 @@ static int cmd_blescan_stop(int argc, char **argv) {
     return 0;
 }
 
+static void print_hex(const char *label, const uint8_t *data, unsigned len) {
+    if (len == 0) {
+        return;
+    }
+    printf("       %s=", label);
+    for (unsigned i = 0; i < len; i++) {
+        printf("%02x", data[i]);
+    }
+    printf("\n");
+}
+
 static int cmd_bledevices(int argc, char **argv) {
     static ble_device_t devices[CONFIG_BLE_MAX_DEVICES]; // too large for the console task's stack
     unsigned n = ble_controller_get_devices(devices, CONFIG_BLE_MAX_DEVICES);
@@ -258,6 +269,8 @@ static int cmd_bledevices(int argc, char **argv) {
                i, d->addr[0], d->addr[1], d->addr[2], d->addr[3], d->addr[4], d->addr[5],
                d->rssi, d->connectable ? "conn" : "nonconn", company,
                d->name_len, d->name);
+        print_hex("mfg", d->mfg_data, d->mfg_data_len);
+        print_hex("svc", d->svc_data, d->svc_data_len);
     }
     printf("%u device(s).\n", n);
     return 0;

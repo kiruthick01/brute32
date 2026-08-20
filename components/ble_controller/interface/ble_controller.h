@@ -29,8 +29,10 @@ typedef struct {
     char name[32];
     uint8_t name_len;
     uint16_t company_id;      // manufacturer data company ID, 0xFFFF if none seen
-    uint8_t mfg_data[16];
+    uint8_t mfg_data[31];     // raw AD 0xFF value (company ID bytes included); 31 = max legacy AD payload
     uint8_t mfg_data_len;
+    uint8_t svc_data[31];     // raw AD 0x16 value (16-bit service UUID bytes included)
+    uint8_t svc_data_len;
     bool connectable;
 } ble_device_t;
 

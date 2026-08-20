@@ -4,6 +4,26 @@ Rough running notes, not polished docs. Newest entry on top.
 
 ---
 
+## 2026-08-20 (5)
+
+Captured real Apple/Android BLE advertisements with `blescan`/`bledevices` for direct comparison against `blespam`'s forged payloads — found and fixed real structural bugs, still no popup on either platform. Parking Phase 3 spam here for now.
+
+**Capture tooling change**
+- `bledevices` only printed `company_id`, not raw bytes — not enough to diff against a forged payload. Added `svc_data`/`svc_data_len` to `ble_device_t` (was already capturing `mfg_data` but not AD 0x16 service data — Fast Pair lives there) and a hex dump of both raw fields to `bledevices` output.
+- First capture attempt truncated real packets: `mfg_data`/`svc_data` buffers were 24 bytes but a real Apple Proximity Pairing broadcast is 29 bytes on the wire. Bumped both to 31 (BLE legacy advertising's actual max AD payload) and recaptured clean.
+
+**What the real captures showed, vs. what `blespam` was sending**
+- **Apple: wrong Continuity message type entirely.** `blespam apple` was building Continuity type `0x10` ("Nearby Action") — a message class with no clear public documentation of what triggers a popup. A real nearby AirPods Pro was observed (twice, stable across both captures at the same address) broadcasting type `0x07` ("Proximity Pairing") instead — company `4c00`, type `07`, length `19` (25 bytes): `01 0e 20 0b 98 8f 01 00 05` + a 16-byte tail that changed every broadcast. That's the actual "Would you like to pair?" AirPods message. Rewrote `build_apple_payload()` to reproduce this exact real structure (prefix, AirPods Pro model ID `0x0e20`, the stable template bytes, random 16-byte tail) instead of the old guessed type-0x10 format.
+- **Apple: no Flags AD in the real broadcast.** The real 31-byte capture was manufacturer-data-only, no room for (and no) Flags AD (`02 01 06`) — Apple's Proximity Pairing broadcasts skip it. `blespam` was prepending one. Dropped it for the Apple payload to match.
+- **Android: missing a required frame byte.** Real Fast Pair service-data captures (two different real devices, both under UUID `0xFE2C`) all had the form `00 <3-byte model ID> ...` — a leading `0x00` field-header byte before the model ID that `build_android_payload()` was omitting entirely, sending just the bare 3 bytes. Added the missing `0x00`.
+
+**Hardware retest, both fixes applied**
+- `blespam apple 300` and `blespam android 300`, 20s each, both run clean — zero `ble_gap_adv_start` failures.
+- **Still no popup** on a real Android phone (Fast Pair) — untested against a real iPhone this round (none available). Structurally these payloads are now the most accurate they've been (Apple's is byte-for-byte a real captured template except the intentionally-random tail; Android's frame format is capture-confirmed correct), so remaining suspects have narrowed further: almost certainly the Fast Pair `fastpair_model_ids[]` values (still just guessed public IDs, never confirmed against a real capture — unlike the frame format around them) and/or the RPA rotation timing (1s) not lining up with when a phone actually re-evaluates a nearby advertiser, and/or OS-side hardening on current-gen phones.
+- Parking here — diminishing returns on guessing further without either a way to observe *why* the phone's Bluetooth stack rejects the packet (no such visibility from the ESP32 side) or a real captured Fast Pair "not yet paired" advertisement to compare model IDs against directly (only got "already paired, with account key filter" captures this round, which don't show a bare model ID in isolation).
+
+---
+
 ## 2026-08-20 (4)
 
 Fixed the leading spam-address-format hypothesis from the previous entry, retested on hardware — still no popup. Narrows the remaining suspects down to payload byte fidelity / OS hardening.
