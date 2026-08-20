@@ -4,6 +4,19 @@ Rough running notes, not polished docs. Newest entry on top.
 
 ---
 
+## 2026-08-20 (3)
+
+Phase 3 hardware-tested: `blescan`/`bledevices` confirmed working, `blespam` mechanically confirmed but payload fidelity gap is real, not just theoretical.
+
+- **`blescan 10` + `bledevices`** — confirmed against real hardware: 25 real nearby BLE devices captured in one scan, RSSI/connectable-flag/manufacturer-company-ID/advertised-name all populated correctly (real device names came through: "OnePlus Nord Buds 3r", "KAMESHWAR", "realme Buds T200 Lite(BLE)", "Galaxy Buds2 Pro LE"; company ID `0x004c` = Apple showed up repeatedly as expected from nearby iPhones/AirPods).
+- **Found and fixed a real crash** during this same test: `bledevices` stack-overflowed the `console_repl` task and rebooted the board. Root cause: `cmd_bledevices` put a full `CONFIG_BLE_MAX_DEVICES`-entry `ble_device_t[]` on the console task's stack (~4KB default) as a local — fine for `blescan`'s internal static table, not fine as a stack local in a command handler. Fixed by making it `static` in `main.c`. Also fixed a cosmetic bug caught in the same pass: unknown company ID printed as `-0000` instead of `-`. Rebuilt clean, reflashed, reran — 25 devices listed, no crash.
+- **`blespam apple 300`** and **`blespam android 300`** — both ran 20s straight against real nearby phones with no crash, no error, advertising restarted every 300ms with a fresh random address each cycle (confirmed via NimBLE logs: `GAP procedure initiated: stop advertising` / `advertise` pairs every tick). **No popup on either a nearby iPhone (apple mode) or a nearby Android phone (android mode).** This confirms the fidelity gap flagged in the previous entry is real: the AD-structure/company-ID/service-UUID framing works (packets are legitimately shaped Continuity/Fast Pair advertisements), but the specific action-type bytes (`apple_action_types[]`) and Fast Pair model IDs (`fastpair_model_ids[]`) in `ble_controller.c` don't trigger a popup on either OS as currently chosen — need real correct values, not just plausible-shaped ones.
+- Both target phones were current-generation flagship devices (recent iOS, recent Android) — plausible that popup-triggering conditions are pickier now (proximity/RSSI threshold, iOS/Android version gating, or the specific byte values being simply wrong) than what older public write-ups describe. Not root-caused yet.
+
+Next: find corrected/verified Continuity action-type and Fast Pair model-ID byte values (cross-check multiple sources, or capture real Apple/Android device advertisements with `blescan`'s manufacturer-data output for comparison) rather than guessing further blind.
+
+---
+
 ## 2026-08-20 (2)
 
 Phase 3 (BLE recon + advertising-layer spam) built, build-verified, not yet flash-tested.

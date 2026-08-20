@@ -244,14 +244,19 @@ static int cmd_blescan_stop(int argc, char **argv) {
 }
 
 static int cmd_bledevices(int argc, char **argv) {
-    ble_device_t devices[CONFIG_BLE_MAX_DEVICES];
+    static ble_device_t devices[CONFIG_BLE_MAX_DEVICES]; // too large for the console task's stack
     unsigned n = ble_controller_get_devices(devices, CONFIG_BLE_MAX_DEVICES);
     for (unsigned i = 0; i < n; i++) {
         ble_device_t *d = &devices[i];
-        printf("[%2u] %02x:%02x:%02x:%02x:%02x:%02x  rssi=%4d  %s  company=%s%04x  name=\"%.*s\"\n",
+        char company[8];
+        if (d->company_id == 0xFFFF) {
+            snprintf(company, sizeof(company), "-");
+        } else {
+            snprintf(company, sizeof(company), "0x%04x", d->company_id);
+        }
+        printf("[%2u] %02x:%02x:%02x:%02x:%02x:%02x  rssi=%4d  %s  company=%s  name=\"%.*s\"\n",
                i, d->addr[0], d->addr[1], d->addr[2], d->addr[3], d->addr[4], d->addr[5],
-               d->rssi, d->connectable ? "conn" : "nonconn",
-               d->company_id == 0xFFFF ? "-" : "0x", d->company_id == 0xFFFF ? 0 : d->company_id,
+               d->rssi, d->connectable ? "conn" : "nonconn", company,
                d->name_len, d->name);
     }
     printf("%u device(s).\n", n);

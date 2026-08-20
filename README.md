@@ -40,7 +40,7 @@
 |---|---|---|
 | 1 | Core: WiFi ctl, frame analysis, PCAP/HCCAPX serialization, deauth, PMKID/handshake capture, SPIFFS, console REPL | Hardware-confirmed: scan, deauth, handshake capture, save/fs_list. PMKID mechanically works, unproven against a PMKID-capable target. |
 | 2 | Evil twin AP + captive portal | Hardware-confirmed: AP clone, karma probe responder. Captive portal + credential capture unconfirmed end-to-end (see DEVLOG.md). |
-| 3 | BLE recon + advertising-layer attacks | `idf.py build` clean on IDF 5.3.2 / `esp32s3` (NimBLE). Hardware validation not yet done. |
+| 3 | BLE recon + advertising-layer attacks | Hardware-confirmed: `blescan`/`bledevices` (real device fingerprinting). `blespam` mechanically confirmed (advertises cleanly, no crash) but no popup produced yet on real iOS/Android — payload byte values need correction (see DEVLOG.md). |
 | 4 | microSD logging + GPS-tagged capture (wardriving) | Not started |
 | 5 | On-device display + button/encoder UI | Not started |
 
