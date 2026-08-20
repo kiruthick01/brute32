@@ -26,6 +26,7 @@
 #include "attack_pmkid.h"
 #include "attack_handshake.h"
 #include "attack_evil_twin.h"
+#include "ble_controller.h"
 #include "webserver.h"
 #include "pcap_serializer.h"
 #include "hccapx_serializer.h"
@@ -217,6 +218,86 @@ static int cmd_creds(int argc, char **argv) {
     return 0;
 }
 
+// --- ble ---
+
+static struct {
+    struct arg_int *duration_sec;
+    struct arg_end *end;
+} blescan_args;
+
+static int cmd_blescan(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **) &blescan_args);
+    if (nerrors != 0) {
+        arg_print_errors(stdout, blescan_args.end, argv[0]);
+        return 1;
+    }
+    unsigned duration = blescan_args.duration_sec->count > 0 ? (unsigned) blescan_args.duration_sec->ival[0] : 0;
+    ble_controller_scan_start(duration);
+    printf("BLE scan started%s.\n", duration == 0 ? " (run 'blescan_stop' to end)" : "");
+    return 0;
+}
+
+static int cmd_blescan_stop(int argc, char **argv) {
+    ble_controller_scan_stop();
+    printf("BLE scan stopped.\n");
+    return 0;
+}
+
+static int cmd_bledevices(int argc, char **argv) {
+    ble_device_t devices[CONFIG_BLE_MAX_DEVICES];
+    unsigned n = ble_controller_get_devices(devices, CONFIG_BLE_MAX_DEVICES);
+    for (unsigned i = 0; i < n; i++) {
+        ble_device_t *d = &devices[i];
+        printf("[%2u] %02x:%02x:%02x:%02x:%02x:%02x  rssi=%4d  %s  company=%s%04x  name=\"%.*s\"\n",
+               i, d->addr[0], d->addr[1], d->addr[2], d->addr[3], d->addr[4], d->addr[5],
+               d->rssi, d->connectable ? "conn" : "nonconn",
+               d->company_id == 0xFFFF ? "-" : "0x", d->company_id == 0xFFFF ? 0 : d->company_id,
+               d->name_len, d->name);
+    }
+    printf("%u device(s).\n", n);
+    return 0;
+}
+
+static struct {
+    struct arg_str *mode;
+    struct arg_int *interval_ms;
+    struct arg_end *end;
+} blespam_args;
+
+static int cmd_blespam(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **) &blespam_args);
+    if (nerrors != 0) {
+        arg_print_errors(stdout, blespam_args.end, argv[0]);
+        return 1;
+    }
+
+    const char *mode_str = blespam_args.mode->sval[0];
+    ble_spam_mode_t mode;
+    if (strcmp(mode_str, "apple") == 0) {
+        mode = BLE_SPAM_APPLE;
+    } else if (strcmp(mode_str, "android") == 0) {
+        mode = BLE_SPAM_ANDROID;
+    } else if (strcmp(mode_str, "all") == 0) {
+        mode = BLE_SPAM_ALL;
+    } else {
+        printf("Unknown mode '%s'. Use apple|android|all.\n", mode_str);
+        return 1;
+    }
+
+    unsigned interval = blespam_args.interval_ms->count > 0
+        ? (unsigned) blespam_args.interval_ms->ival[0]
+        : CONFIG_BLE_SPAM_DEFAULT_INTERVAL_MS;
+    ble_controller_spam_start(mode, interval);
+    printf("BLE spam started (%s, every %ums). Disruptive to nearby devices — isolated test environments only.\n", mode_str, interval);
+    return 0;
+}
+
+static int cmd_blespam_stop(int argc, char **argv) {
+    ble_controller_spam_stop();
+    printf("BLE spam stopped.\n");
+    return 0;
+}
+
 // --- status / save ---
 
 static int cmd_status(int argc, char **argv) {
@@ -381,6 +462,48 @@ static void register_commands() {
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&creds_cmd));
 
+    blescan_args.duration_sec = arg_int0(NULL, NULL, "<sec>", "scan duration (default: run until 'blescan_stop')");
+    blescan_args.end = arg_end(1);
+    const esp_console_cmd_t blescan_cmd = {
+        .command = "blescan",
+        .help = "Start passive BLE advertisement scan",
+        .func = &cmd_blescan,
+        .argtable = &blescan_args,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&blescan_cmd));
+
+    const esp_console_cmd_t blescan_stop_cmd = {
+        .command = "blescan_stop",
+        .help = "Stop BLE scan",
+        .func = &cmd_blescan_stop,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&blescan_stop_cmd));
+
+    const esp_console_cmd_t bledevices_cmd = {
+        .command = "bledevices",
+        .help = "List BLE devices discovered by the current/last scan",
+        .func = &cmd_bledevices,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&bledevices_cmd));
+
+    blespam_args.mode = arg_str1(NULL, NULL, "<apple|android|all>", "spam payload family");
+    blespam_args.interval_ms = arg_int0(NULL, NULL, "<ms>", "resend period in ms (default: Kconfig BLE_SPAM_DEFAULT_INTERVAL_MS)");
+    blespam_args.end = arg_end(2);
+    const esp_console_cmd_t blespam_cmd = {
+        .command = "blespam",
+        .help = "Start BLE advertising spam (disruptive, isolated test environments only)",
+        .func = &cmd_blespam,
+        .argtable = &blespam_args,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&blespam_cmd));
+
+    const esp_console_cmd_t blespam_stop_cmd = {
+        .command = "blespam_stop",
+        .help = "Stop BLE advertising spam",
+        .func = &cmd_blespam_stop,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&blespam_stop_cmd));
+
     const esp_console_cmd_t status_cmd = {
         .command = "status",
         .help = "Show capture status (PMKID/handshake)",
@@ -420,6 +543,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifictl_init();
     wifictl_mgmt_ap_start();
+    ble_controller_init();
 
     if (storage_init() != 0) {
         ESP_LOGW(TAG, "Storage unavailable; 'save' will fail.");

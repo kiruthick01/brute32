@@ -38,9 +38,9 @@
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Core: WiFi ctl, frame analysis, PCAP/HCCAPX serialization, deauth, PMKID/handshake capture, SPIFFS, console REPL | `idf.py build` clean on IDF 5.3.2 / `esp32s3`. Hardware validation in progress. |
-| 2 | Evil twin AP + captive portal | Not started |
-| 3 | BLE recon + advertising-layer attacks | Not started |
+| 1 | Core: WiFi ctl, frame analysis, PCAP/HCCAPX serialization, deauth, PMKID/handshake capture, SPIFFS, console REPL | Hardware-confirmed: scan, deauth, handshake capture, save/fs_list. PMKID mechanically works, unproven against a PMKID-capable target. |
+| 2 | Evil twin AP + captive portal | Hardware-confirmed: AP clone, karma probe responder. Captive portal + credential capture unconfirmed end-to-end (see DEVLOG.md). |
+| 3 | BLE recon + advertising-layer attacks | `idf.py build` clean on IDF 5.3.2 / `esp32s3` (NimBLE). Hardware validation not yet done. |
 | 4 | microSD logging + GPS-tagged capture (wardriving) | Not started |
 | 5 | On-device display + button/encoder UI | Not started |
 
@@ -62,6 +62,10 @@ brute32/
 │   ├── attack_deauth/           broadcast + targeted deauth via raw
 │   │                            802.11 frame injection
 │   ├── attack_pmkid_handshake/  passive PMKID + WPA/WPA2 4-way capture
+│   ├── attack_evil_twin/        rogue AP clone + karma probe responder
+│   ├── ble_controller/          NimBLE bring-up, GAP scan/fingerprinting,
+│   │                            advertising-layer spam
+│   ├── webserver/                captive portal HTTP server + DNS hijack
 │   └── storage/                 SPIFFS wrapper, custom partition table
 ├── partitions.csv
 ├── sdkconfig.defaults
@@ -78,12 +82,15 @@ Each attack/capture component exposes a typed result API — no shared global st
 - **PMKID capture** pulls the PMKID directly from the first EAPOL message of the 4-way handshake (RSN IE, no deauth required) — the same technique documented by hashcat/atom for the original clientless PMKID attack.
 - **Handshake capture** is fully passive: sniffs EAPOL M1–M4 off natural client reassociation. Pair with your own deauth call if you need to force a handshake on a network you control.
 - **Serialization** targets are file formats, not display formats — PCAP for Wireshark analysis, HCCAPX for direct `hashcat -m 22000` input.
+- **BLE spam** (`ble_controller`) cycles forged advertising payloads — Apple Continuity "Nearby Action" manufacturer data and Google Fast Pair service data — restarting advertising with a new random address each interval so every broadcast reads as a distinct nearby device. The AD-structure/company-ID/service-UUID framing is correct; the specific action-type and model-ID byte values that make a given phone show *a specific* popup are best-effort from public write-ups, not verified against a real device yet.
 
 </details>
 
 ---
 
-## Console commands (Phase 1)
+## Console commands
+
+### Phase 1 — WiFi core
 
 | Command | Description |
 |---|---|
@@ -97,6 +104,25 @@ Each attack/capture component exposes a typed result API — no shared global st
 | `status` | Current PMKID/handshake capture status and buffer size |
 | `save <name>` | Flush current capture buffer to SPIFFS as `<name>.pcap` / `<name>.hccapx` (whichever has data) |
 | `fs_list` | List captured files in flash storage |
+
+### Phase 2 — Evil twin / rogue AP
+
+| Command | Description |
+|---|---|
+| `eviltwin <index>` | Clone `scan` result `<index>` (open auth) and start the captive portal. Takes the management AP offline until `eviltwin_stop` |
+| `eviltwin_stop` | Stop the rogue AP + captive portal, restore the management AP |
+| `karma_log` | List probe requests seen by the karma responder |
+| `creds` | Show the last password captured by the captive portal |
+
+### Phase 3 — BLE
+
+| Command | Description |
+|---|---|
+| `blescan [sec]` | Start a passive BLE advertisement scan (default: runs until `blescan_stop`) |
+| `blescan_stop` | Stop the running BLE scan |
+| `bledevices` | List devices discovered by the current/last scan — address, RSSI, manufacturer company ID, advertised name |
+| `blespam <apple\|android\|all> [ms]` | Cycle forged advertising payloads (Apple Continuity "Nearby Action" / Google Fast Pair) to trigger OS pairing popups on nearby phones. Disruptive — isolated test environments only |
+| `blespam_stop` | Stop BLE spam |
 
 ---
 

@@ -4,6 +4,29 @@ Rough running notes, not polished docs. Newest entry on top.
 
 ---
 
+## 2026-08-20 (2)
+
+Phase 3 (BLE recon + advertising-layer spam) built, build-verified, not yet flash-tested.
+
+**What got built**
+- `components/ble_controller/` — NimBLE bring-up (`nimble_port_init` + host FreeRTOS task, no GATT server needed for scan/spam-only roles). Two pieces:
+  - **Scan**: passive-central active GAP scan (`ble_gap_disc`), own dedup-by-address table (`CONFIG_BLE_MAX_DEVICES` entries, Kconfig-tunable) instead of the controller's `filter_duplicates` so RSSI/fields keep updating per device across the scan window. Parses name + manufacturer-data company ID out of `ble_hs_adv_fields` for basic fingerprinting.
+  - **Spam**: peripheral-role non-connectable advertising, `esp_timer`-driven cycle that on every tick stops advertising, generates a new NRPA random address (`ble_hs_id_gen_rnd` + `ble_hs_id_set_rnd`) so each broadcast reads as a distinct device, builds a forged AD payload (Apple Continuity "Nearby Action" manufacturer data, or Google Fast Pair service data under UUID 0xFE2C), and restarts advertising — matches how public BLE-spam tools trigger repeated OS-level pairing popups.
+  - Flagged explicitly, matching the plan's ask: spam is disruptive-by-design, isolated-test-environments-only, console command prints that warning every time it's started.
+- Console commands: `blescan [sec]`, `blescan_stop`, `bledevices`, `blespam <apple|android|all> [ms]`, `blespam_stop`.
+- `sdkconfig.defaults` gained NimBLE-only BT config (`CONFIG_BT_NIMBLE_ENABLED=y`, Bluedroid off, BLE-only controller mode) — mirrors the standard ESP-IDF NimBLE example defaults.
+
+**Build verification**
+- `idf.py build` clean on IDF 5.3.2 / `esp32s3`, zero warnings, 47% app-partition flash free. `bt` and `ble_controller` both correctly resolved into the component graph (confirmed via `idf.py set-target esp32s3` component listing).
+- **Not yet hardware-tested** — no real device has scanned nearby BLE traffic through `blescan`, and no phone has been checked for an actual popup from `blespam`. Per this repo's own bar (see PMKID/eviltwin below), "builds clean" and "works" are different claims — Phase 3 is only the former so far.
+
+**Known fidelity gap, flagged up front**
+- The `blespam` Apple/Android payload byte values (action-type codes, Fast Pair model IDs) are reconstructed from public reverse-engineering write-ups, not from Apple/Google specs — the AD structure (manufacturer-data framing, company ID 0x004C, Fast Pair service UUID 0xFE2C) is solid, but which exact byte triggers which exact popup on which OS version is unverified. Needs a real round of hardware testing against real phones to confirm/correct.
+
+Next up: flash-test `blescan` against known-nearby BLE peripherals (phone, headphones) to confirm the device table populates correctly, then `blespam` against a real iOS/Android device to see whether any payload variant actually produces a popup — adjust action-type/model-ID tables based on what's observed, same iterative approach PMKID and eviltwin took.
+
+---
+
 ## 2026-08-20
 
 Phase 2 (evil twin / rogue AP / captive portal) built and partially validated on hardware.

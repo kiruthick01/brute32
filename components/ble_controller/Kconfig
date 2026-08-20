@@ -1,0 +1,15 @@
+menu "BLE Controller"
+    config BLE_MAX_DEVICES
+        int "Maximum devices tracked per scan"
+        default 32
+        help
+            Maximum number of distinct BLE devices kept in the discovered-device
+            table before ble_controller_scan_start() stops adding new entries.
+
+    config BLE_SPAM_DEFAULT_INTERVAL_MS
+        int "Default spam advertising interval (ms)"
+        default 250
+        help
+            Default period between forged advertisement broadcasts when no
+            interval is given on the console.
+endmenu
